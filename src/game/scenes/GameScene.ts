@@ -69,6 +69,9 @@ export class GameScene extends Phaser.Scene {
 
   private mobileInput: InputState = { ...NO_INPUT };
   private lastHudPush = 0;
+  /** Throttles cosmetic hit feedback (FX + sfx) during rapid multi-hits. */
+  private lastHitSfxAt = 0;
+  private lastBossFxAt = 0;
 
   private keys!: {
     up: Phaser.Input.Keyboard.Key;
@@ -358,7 +361,7 @@ export class GameScene extends Phaser.Scene {
     const shouldRemove = bullet.registerHit(enemy.uid);
 
     const dead = enemy.hit(bullet.damage);
-    audio.play("enemyHit");
+    this.playHitSfx();
     if (dead) {
       this.addScore(enemy.scoreValue);
       this.effects.explosion(enemy.x, enemy.y, ENEMY_FX_COLOR[enemy.enemyType], 1);
@@ -371,6 +374,14 @@ export class GameScene extends Phaser.Scene {
     if (shouldRemove) bullet.deactivate();
   };
 
+  /** Plays the light hit blip at most every ~45ms to avoid audio overload. */
+  private playHitSfx(): void {
+    const now = this.time.now;
+    if (now - this.lastHitSfxAt < 45) return;
+    this.lastHitSfxAt = now;
+    audio.play("enemyHit");
+  }
+
   /** Boss occupies a single logical target id for piercing bullets. */
   private static readonly BOSS_HIT_ID = -1;
 
@@ -379,8 +390,13 @@ export class GameScene extends Phaser.Scene {
     if (!bullet.canDamage(GameScene.BOSS_HIT_ID)) return;
     const shouldRemove = bullet.registerHit(GameScene.BOSS_HIT_ID);
 
-    audio.play("enemyHit");
-    this.effects.explosion(bullet.x, bullet.y, COLORS.bossAccent, 0.4);
+    this.playHitSfx();
+    // Throttle the on-hit sparkle so dense fire doesn't spawn FX every frame.
+    const now = this.time.now;
+    if (now - this.lastBossFxAt > 55) {
+      this.lastBossFxAt = now;
+      this.effects.explosion(bullet.x, bullet.y, COLORS.bossAccent, 0.4);
+    }
     const dead = boss.hit(bullet.damage);
     if (dead) this.defeatBoss();
     if (shouldRemove) bullet.deactivate();

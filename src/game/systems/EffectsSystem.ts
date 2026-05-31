@@ -4,13 +4,68 @@ import { COLORS, DEPTH, GAME_HEIGHT, GAME_WIDTH } from "../constants";
 /**
  * Visual flourishes: multi-layer parallax starfield, explosions, muzzle flashes
  * and floating score popups. Pure presentation — no gameplay state.
+ *
+ * PERFORMANCE: a single long-lived particle emitter and a recycled pool of
+ * flash sprites are reused for every burst. Creating/destroying a
+ * ParticleEmitter (or sprite) per hit caused frame collapse during boss fights
+ * where many bullets connect each frame, so everything here is pooled.
  */
 export class EffectsSystem {
   private scene: Phaser.Scene;
   private layers: { sprite: Phaser.GameObjects.TileSprite; speed: number }[] = [];
+  private burst!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private flashPool: Phaser.GameObjects.Sprite[] = [];
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
+    this.initEmitter();
+  }
+
+  private initEmitter(): void {
+    // One reusable emitter; bursts are produced via emitParticleAt().
+    this.burst = this.scene.add.particles(0, 0, "particle", {
+      speed: { min: 60, max: 240 },
+      angle: { min: 0, max: 360 },
+      scale: { start: 0.9, end: 0 },
+      lifespan: { min: 250, max: 560 },
+      blendMode: "ADD",
+      emitting: false,
+    });
+    this.burst.setDepth(DEPTH.EFFECTS);
+  }
+
+  /** Borrow a flash sprite from the pool (creates one only when needed). */
+  private getFlash(): Phaser.GameObjects.Sprite {
+    for (const s of this.flashPool) {
+      if (!s.active) {
+        s.setActive(true).setVisible(true);
+        return s;
+      }
+    }
+    const sprite = this.scene.add
+      .sprite(0, 0, "flash")
+      .setDepth(DEPTH.EFFECTS)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.flashPool.push(sprite);
+    return sprite;
+  }
+
+  private releaseFlash(sprite: Phaser.GameObjects.Sprite): void {
+    sprite.setActive(false).setVisible(false);
+    sprite.setScale(1).setAlpha(1).setRotation(0);
+  }
+
+  private ring(x: number, y: number, color: number, fromScale: number, toScale: number, duration: number): void {
+    const ring = this.getFlash();
+    ring.setPosition(x, y).setTint(color).setScale(fromScale).setAlpha(0.85);
+    this.scene.tweens.add({
+      targets: ring,
+      scale: { from: fromScale, to: toScale },
+      alpha: { from: 0.85, to: 0 },
+      duration,
+      ease: "Sine.easeOut",
+      onComplete: () => this.releaseFlash(ring),
+    });
   }
 
   createParallax(): void {
@@ -42,48 +97,21 @@ export class EffectsSystem {
   }
 
   muzzleFlash(x: number, y: number): void {
-    const flash = this.scene.add
-      .sprite(x, y, "flash")
-      .setDepth(DEPTH.EFFECTS)
-      .setBlendMode(Phaser.BlendModes.ADD)
-      .setTint(COLORS.playerBullet);
+    const flash = this.getFlash();
+    flash.setPosition(x, y).setTint(COLORS.playerBullet).setScale(0.6).setAlpha(0.9);
     this.scene.tweens.add({
       targets: flash,
-      scale: { from: 0.6, to: 1.4 },
+      scale: { from: 0.6, to: 1.3 },
       alpha: { from: 0.9, to: 0 },
-      duration: 120,
-      onComplete: () => flash.destroy(),
+      duration: 110,
+      onComplete: () => this.releaseFlash(flash),
     });
   }
 
   explosion(x: number, y: number, color: number, scale = 1): void {
-    const emitter = this.scene.add.particles(x, y, "particle", {
-      speed: { min: 60 * scale, max: 220 * scale },
-      angle: { min: 0, max: 360 },
-      scale: { start: 0.9 * scale, end: 0 },
-      lifespan: { min: 250, max: 550 },
-      quantity: Math.round(14 * scale),
-      tint: [color, 0xffffff, COLORS.playerBullet],
-      blendMode: "ADD",
-      emitting: false,
-    });
-    emitter.setDepth(DEPTH.EFFECTS);
-    emitter.explode(Math.round(16 * scale));
-
-    const ring = this.scene.add
-      .sprite(x, y, "flash")
-      .setDepth(DEPTH.EFFECTS)
-      .setBlendMode(Phaser.BlendModes.ADD)
-      .setTint(color);
-    this.scene.tweens.add({
-      targets: ring,
-      scale: { from: 0.4 * scale, to: 2.2 * scale },
-      alpha: { from: 0.8, to: 0 },
-      duration: 320,
-      onComplete: () => ring.destroy(),
-    });
-
-    this.scene.time.delayedCall(700, () => emitter.destroy());
+    this.burst.setParticleTint(color);
+    this.burst.emitParticleAt(x, y, Math.round(14 * scale));
+    this.ring(x, y, color, 0.4 * scale, 2.2 * scale, 320);
   }
 
   bigExplosion(x: number, y: number): void {
@@ -102,34 +130,10 @@ export class EffectsSystem {
 
   /** Celebratory burst when the weapon evolves to a new tier. */
   weaponUpgradeBurst(x: number, y: number, color: number): void {
-    const emitter = this.scene.add.particles(x, y, "particle", {
-      speed: { min: 120, max: 300 },
-      angle: { min: 0, max: 360 },
-      scale: { start: 1.1, end: 0 },
-      lifespan: { min: 350, max: 650 },
-      tint: [color, 0xffffff],
-      blendMode: "ADD",
-      emitting: false,
-    });
-    emitter.setDepth(DEPTH.EFFECTS);
-    emitter.explode(26);
-
-    for (let i = 0; i < 2; i++) {
-      const ring = this.scene.add
-        .sprite(x, y, "flash")
-        .setDepth(DEPTH.EFFECTS)
-        .setBlendMode(Phaser.BlendModes.ADD)
-        .setTint(color);
-      this.scene.tweens.add({
-        targets: ring,
-        scale: { from: 0.5, to: 3 + i },
-        alpha: { from: 0.9, to: 0 },
-        duration: 420 + i * 120,
-        ease: "Sine.easeOut",
-        onComplete: () => ring.destroy(),
-      });
-    }
-    this.scene.time.delayedCall(800, () => emitter.destroy());
+    this.burst.setParticleTint(color);
+    this.burst.emitParticleAt(x, y, 26);
+    this.ring(x, y, color, 0.5, 3, 420);
+    this.ring(x, y, 0xffffff, 0.5, 4, 540);
   }
 
   scorePopup(x: number, y: number, text: string, color = "#ffce54"): void {
