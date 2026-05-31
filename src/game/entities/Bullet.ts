@@ -33,6 +33,11 @@ export class Bullet extends Phaser.Physics.Arcade.Sprite {
     this.pierceLeft = pierce;
     this.hitIds.clear();
     this.setRotation(angleRad);
+    // Defensive: if the Arcade body is somehow missing, attach one now rather
+    // than throwing inside the game loop (a thrown error freezes the canvas).
+    if (!this.body) {
+      this.scene.physics.add.existing(this);
+    }
     const body = this.body as Phaser.Physics.Arcade.Body;
     // Match the body to the current texture (textures vary between weapons).
     body.setSize(this.width, this.height);

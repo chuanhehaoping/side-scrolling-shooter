@@ -249,6 +249,9 @@ export class GameScene extends Phaser.Scene {
   ): Bullet {
     const bullet = new Bullet(this, texture);
     this.add.existing(bullet);
+    // Explicitly attach an Arcade body so bullet.body is guaranteed to exist
+    // before fire() touches it (group.add alone is not reliable across reuse).
+    this.physics.add.existing(bullet);
     group.add(bullet);
     bullet.setDepth(depth);
     return bullet;

@@ -10,7 +10,7 @@ import { GameOverScene } from "./scenes/GameOverScene";
  * Must only be called on the client (no window access happens before this).
  */
 export function createGame(parent: HTMLElement): Phaser.Game {
-  return new Phaser.Game({
+  const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent,
     width: GAME_WIDTH,
@@ -37,4 +37,11 @@ export function createGame(parent: HTMLElement): Phaser.Game {
     },
     scene: [BootScene, TitleScene, GameScene, GameOverScene],
   });
+
+  // Expose the instance for debugging / automated smoke tests in the browser.
+  if (typeof window !== "undefined") {
+    (window as unknown as { __SKY_STRIKE__?: Phaser.Game }).__SKY_STRIKE__ = game;
+  }
+
+  return game;
 }
