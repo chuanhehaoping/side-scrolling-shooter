@@ -1,5 +1,7 @@
 # 🚀 Sky Strike
 
+**▶ Play now:** https://side-scrolling-shooter.vercel.app
+
 A fast, retro-sci-fi **side-scrolling shoot-'em-up** built with **Next.js**, **TypeScript**, **React** and **Phaser 3**. Pilot a fighter from the left of the screen, blast waves of enemies, grab power-ups, and bring down a multi-pattern boss — all rendered with procedural vector graphics and synthesized audio (zero asset files).
 
 > Built to be a portfolio-quality, instantly-playable browser game.
