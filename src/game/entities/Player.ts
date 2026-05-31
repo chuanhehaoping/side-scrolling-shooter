@@ -1,20 +1,27 @@
 import * as Phaser from "phaser";
-import { PLAYER, POWERUP } from "../config";
+import { OVERDRIVE_SHOTS, PLAYER, POWERUP, WEAPONS } from "../config";
 import { COLORS, DEPTH } from "../constants";
 import type { InputState } from "../types";
 import { audio } from "../audio";
 
-export type FireFn = (
-  x: number,
-  y: number,
-  vx: number,
-  vy: number,
-  angleRad: number,
-) => void;
+/** One projectile request emitted by the player toward the scene. */
+export interface PlayerShot {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  angle: number;
+  damage: number;
+  texture: string;
+  pierce: number;
+}
+
+export type FireFn = (shot: PlayerShot) => void;
 
 /**
- * Player fighter. Handles movement, tilt, engine flame, firing cadence,
- * power-ups (rapid fire / 3-way shot / shield) and invulnerability frames.
+ * Player fighter. Handles movement, tilt, engine flame, the evolving weapon
+ * system (laser tiers unlocked by score + temporary overdrive), shield, and
+ * invulnerability frames.
  */
 export class Player extends Phaser.Physics.Arcade.Sprite {
   maxHp: number;
@@ -25,6 +32,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private rapidUntil = 0;
   private powerUntil = 0;
   private shieldActive = false;
+  private weaponIndex = 0;
 
   private flame: Phaser.GameObjects.Sprite;
   private shieldRing: Phaser.GameObjects.Sprite;
@@ -69,6 +77,27 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     return Math.max(0, (this.rapidUntil - this.scene.time.now) / 1000);
   }
 
+  /** 0-based index of the currently unlocked weapon tier. */
+  get weaponLevel(): number {
+    return this.weaponIndex;
+  }
+
+  /**
+   * Promotes the weapon to the highest tier the score has unlocked.
+   * Returns the new tier name when an upgrade happened, otherwise null.
+   */
+  upgradeWeaponForScore(score: number): string | null {
+    let idx = 0;
+    for (let i = 0; i < WEAPONS.length; i++) {
+      if (score >= WEAPONS[i].threshold) idx = i;
+    }
+    if (idx > this.weaponIndex) {
+      this.weaponIndex = idx;
+      return WEAPONS[idx].name;
+    }
+    return null;
+  }
+
   handleMovement(input: InputState): void {
     const body = this.body as Phaser.Physics.Arcade.Body;
     const speed = input.slow ? PLAYER.slowSpeed : PLAYER.baseSpeed;
@@ -91,20 +120,27 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   tryFire(fire: FireFn): void {
     const now = this.scene.time.now;
     if (now < this.nextFireAt) return;
+
+    const tier = WEAPONS[this.weaponIndex];
     const rapid = now < this.rapidUntil;
-    this.nextFireAt = now + (rapid ? PLAYER.rapidFireCooldownMs : PLAYER.fireCooldownMs);
+    this.nextFireAt = now + (rapid ? tier.rapidCooldownMs : tier.cooldownMs);
 
-    const muzzleX = this.x + this.width / 2;
+    const muzzleX = this.x + this.width / 2 - 6;
     const power = now < this.powerUntil;
-    const speed = PLAYER.bulletSpeed;
+    const shots = power ? [...tier.shots, ...OVERDRIVE_SHOTS] : tier.shots;
 
-    if (power) {
-      const spread = 0.22;
-      fire(muzzleX, this.y, speed, 0, 0);
-      fire(muzzleX, this.y, speed * Math.cos(spread), -speed * Math.sin(spread), -spread);
-      fire(muzzleX, this.y, speed * Math.cos(spread), speed * Math.sin(spread), spread);
-    } else {
-      fire(muzzleX, this.y, speed, 0, 0);
+    for (const s of shots) {
+      const a = Phaser.Math.DegToRad(s.angleDeg);
+      fire({
+        x: muzzleX,
+        y: this.y + s.yOffset,
+        vx: Math.cos(a) * s.speed,
+        vy: Math.sin(a) * s.speed,
+        angle: a,
+        damage: s.damage,
+        texture: s.texture,
+        pierce: s.pierce,
+      });
     }
     audio.play("shot");
   }

@@ -103,11 +103,18 @@ export default function GameHud({
             <span className="text-[9px] uppercase tracking-[0.2em] text-white/45">HP</span>
             <HpPips hp={hud.hp} maxHp={hud.maxHp} />
           </div>
+          <WeaponMeter
+            name={hud.weaponName}
+            level={hud.weaponLevel}
+            max={hud.weaponMax}
+            progress={hud.weaponProgress}
+            color={hud.weaponColor}
+          />
           <div className="flex flex-wrap items-center gap-1.5">
             {hud.shield && <Badge color="text-hud-cyan border-hud-cyan/50">◈ SHIELD</Badge>}
             {hud.powerTimeLeft > 0 && (
               <Badge color="text-hud-magenta border-hud-magenta/50">
-                ⋔ 3-WAY {hud.powerTimeLeft.toFixed(0)}s
+                ⋔ OVERDRIVE {hud.powerTimeLeft.toFixed(0)}s
               </Badge>
             )}
             {hud.rapidTimeLeft > 0 && (
@@ -124,6 +131,59 @@ export default function GameHud({
           <span className="text-white/80">SHIFT</span> slow ·{" "}
           <span className="text-white/80">ESC</span> pause
         </p>
+      </div>
+    </div>
+  );
+}
+
+function WeaponMeter({
+  name,
+  level,
+  max,
+  progress,
+  color,
+}: {
+  name: string;
+  level: number;
+  max: number;
+  progress: number;
+  color: string;
+}) {
+  const maxed = level >= max;
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.15em]">
+          <span style={{ color }}>◤</span>
+          <span style={{ color }}>{name}</span>
+        </span>
+        <span className="text-[8px] uppercase tracking-[0.2em] text-white/40">
+          {maxed ? "MAX" : `LV ${level}/${max}`}
+        </span>
+      </div>
+      <div className="flex items-center gap-1">
+        {/* Tier pips */}
+        <div className="flex gap-0.5">
+          {Array.from({ length: max }).map((_, i) => (
+            <span
+              key={i}
+              className="h-1.5 w-2.5 rounded-sm"
+              style={{
+                backgroundColor: i < level ? color : "rgba(255,255,255,0.12)",
+                boxShadow: i < level ? `0 0 6px ${color}` : "none",
+              }}
+            />
+          ))}
+        </div>
+        {/* Progress to next tier */}
+        {!maxed && (
+          <div className="ml-1 h-1.5 w-16 overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full rounded-full transition-[width] duration-200"
+              style={{ width: `${Math.round(progress * 100)}%`, backgroundColor: color }}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

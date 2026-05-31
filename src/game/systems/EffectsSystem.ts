@@ -100,6 +100,38 @@ export class EffectsSystem {
     this.scene.cameras.main.shake(600, 0.012);
   }
 
+  /** Celebratory burst when the weapon evolves to a new tier. */
+  weaponUpgradeBurst(x: number, y: number, color: number): void {
+    const emitter = this.scene.add.particles(x, y, "particle", {
+      speed: { min: 120, max: 300 },
+      angle: { min: 0, max: 360 },
+      scale: { start: 1.1, end: 0 },
+      lifespan: { min: 350, max: 650 },
+      tint: [color, 0xffffff],
+      blendMode: "ADD",
+      emitting: false,
+    });
+    emitter.setDepth(DEPTH.EFFECTS);
+    emitter.explode(26);
+
+    for (let i = 0; i < 2; i++) {
+      const ring = this.scene.add
+        .sprite(x, y, "flash")
+        .setDepth(DEPTH.EFFECTS)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setTint(color);
+      this.scene.tweens.add({
+        targets: ring,
+        scale: { from: 0.5, to: 3 + i },
+        alpha: { from: 0.9, to: 0 },
+        duration: 420 + i * 120,
+        ease: "Sine.easeOut",
+        onComplete: () => ring.destroy(),
+      });
+    }
+    this.scene.time.delayedCall(800, () => emitter.destroy());
+  }
+
   scorePopup(x: number, y: number, text: string, color = "#ffce54"): void {
     const label = this.scene.add
       .text(x, y, text, {

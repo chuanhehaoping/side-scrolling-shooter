@@ -22,6 +22,11 @@ const DEFAULT_HUD: HudSnapshot = {
   bossHpRatio: null,
   difficulty: "normal",
   wave: 1,
+  weaponName: "PULSE",
+  weaponLevel: 1,
+  weaponMax: 6,
+  weaponProgress: 0,
+  weaponColor: "#fff27a",
 };
 
 export default function GameWrapper() {
@@ -261,8 +266,8 @@ function TitleOverlay({
         </div>
         <div>
           <p className="mb-1 text-white/80">Tips</p>
+          <p>Score evolves your laser</p>
           <p>Grab power-ups</p>
-          <p>3-way & rapid fire</p>
           <p>Survive the boss</p>
         </div>
       </div>

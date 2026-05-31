@@ -20,10 +20,14 @@ const STATS: Record<EnemyType, EnemyStats> = {
  * Generic enemy supporting four behaviour profiles (A/B/C/D).
  * Movement and firing logic live in preUpdate so the Phaser loop drives them.
  */
+let NEXT_ENEMY_UID = 1;
+
 export class Enemy extends Phaser.Physics.Arcade.Sprite {
   enemyType: EnemyType = "A";
   hp = 1;
   scoreValue = 0;
+  /** Unique per-spawn id used by piercing bullets to avoid double-hits. */
+  uid = 0;
 
   private baseY = 0;
   private waveAmp = 0;
@@ -50,6 +54,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.enemyType = type;
     this.hp = stats.hp;
     this.scoreValue = stats.score;
+    this.uid = NEXT_ENEMY_UID++;
     this.setTexture(stats.texture);
 
     this.enableBody(true, x, y, true, true);

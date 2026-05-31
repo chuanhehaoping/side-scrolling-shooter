@@ -1,6 +1,6 @@
 import * as Phaser from "phaser";
 import { COLORS, DEPTH, EVENTS, SCENE_KEYS } from "../constants";
-import { BOSS, DIFFICULTIES, HUD_THROTTLE_MS, ITEM, PLAYER } from "../config";
+import { BOSS, DIFFICULTIES, HUD_THROTTLE_MS, ITEM, WEAPONS } from "../config";
 import type {
   Difficulty,
   DifficultyConfig,
@@ -12,6 +12,7 @@ import { bus } from "../eventBus";
 import { audio } from "../audio";
 import { getHighScore, saveHighScore } from "../storage";
 import { Player } from "../entities/Player";
+import type { PlayerShot } from "../entities/Player";
 import { Enemy } from "../entities/Enemy";
 import { Boss } from "../entities/Boss";
 import { Bullet } from "../entities/Bullet";
@@ -20,6 +21,14 @@ import { EffectsSystem } from "../systems/EffectsSystem";
 import { DifficultySystem } from "../systems/DifficultySystem";
 import { EnemySpawner } from "../systems/EnemySpawner";
 import { CollisionSystem } from "../systems/CollisionSystem";
+
+/** Per-enemy-type explosion tint so each kill reads with its own colour. */
+const ENEMY_FX_COLOR: Record<string, number> = {
+  A: COLORS.enemyA,
+  B: COLORS.enemyB,
+  C: COLORS.enemyC,
+  D: COLORS.enemyD,
+};
 
 const NO_INPUT: InputState = {
   up: false,
@@ -215,7 +224,16 @@ export class GameScene extends Phaser.Scene {
     depth: number,
   ): Bullet {
     const existing = group.getFirstDead(false) as Bullet | null;
-    if (existing) return existing;
+    const bullet = existing ?? this.createPooledBullet(group, texture, depth);
+    bullet.setTexture(texture);
+    return bullet;
+  }
+
+  private createPooledBullet(
+    group: Phaser.Physics.Arcade.Group,
+    texture: string,
+    depth: number,
+  ): Bullet {
     const bullet = new Bullet(this, texture);
     this.add.existing(bullet);
     group.add(bullet);
@@ -223,16 +241,10 @@ export class GameScene extends Phaser.Scene {
     return bullet;
   }
 
-  private firePlayerBullet = (
-    x: number,
-    y: number,
-    vx: number,
-    vy: number,
-    angle: number,
-  ) => {
-    const bullet = this.acquireBullet(this.playerBullets, "bulletPlayer", DEPTH.PLAYER_BULLETS);
-    bullet.fire(x, y, vx, vy, PLAYER.bulletDamage, angle);
-    this.effects.muzzleFlash(x, y);
+  private firePlayerBullet = (shot: PlayerShot) => {
+    const bullet = this.acquireBullet(this.playerBullets, shot.texture, DEPTH.PLAYER_BULLETS);
+    bullet.fire(shot.x, shot.y, shot.vx, shot.vy, shot.damage, shot.angle, shot.pierce);
+    this.effects.muzzleFlash(shot.x, shot.y);
   };
 
   private fireEnemyBullet(x: number, y: number, vx: number, vy: number): void {
@@ -341,27 +353,37 @@ export class GameScene extends Phaser.Scene {
 
   private handleBulletHitEnemy = (bullet: Bullet, enemy: Enemy) => {
     if (!bullet.active || !enemy.active) return;
-    bullet.deactivate();
+    // Skip enemies this (piercing) bullet has already damaged.
+    if (!bullet.canDamage(enemy.uid)) return;
+    const shouldRemove = bullet.registerHit(enemy.uid);
+
     const dead = enemy.hit(bullet.damage);
     audio.play("enemyHit");
     if (dead) {
       this.addScore(enemy.scoreValue);
-      this.effects.explosion(enemy.x, enemy.y, COLORS.enemyA, 1);
+      this.effects.explosion(enemy.x, enemy.y, ENEMY_FX_COLOR[enemy.enemyType], 1);
       audio.play("explosion");
       if (Phaser.Math.FloatBetween(0, 1) < this.config.itemDropChance) {
         this.spawnItem(enemy.x, enemy.y);
       }
       enemy.deactivate();
     }
+    if (shouldRemove) bullet.deactivate();
   };
+
+  /** Boss occupies a single logical target id for piercing bullets. */
+  private static readonly BOSS_HIT_ID = -1;
 
   private handleBulletHitBoss = (bullet: Bullet, boss: Boss) => {
     if (!bullet.active || !boss.active) return;
-    bullet.deactivate();
+    if (!bullet.canDamage(GameScene.BOSS_HIT_ID)) return;
+    const shouldRemove = bullet.registerHit(GameScene.BOSS_HIT_ID);
+
     audio.play("enemyHit");
     this.effects.explosion(bullet.x, bullet.y, COLORS.bossAccent, 0.4);
     const dead = boss.hit(bullet.damage);
     if (dead) this.defeatBoss();
+    if (shouldRemove) bullet.deactivate();
   };
 
   private handlePlayerHitByBullet = (bullet: Bullet) => {
@@ -407,7 +429,7 @@ export class GameScene extends Phaser.Scene {
         break;
       case "power":
         this.player.applyPower();
-        this.effects.scorePopup(px, py, "POWER", "#ff4fd8");
+        this.effects.scorePopup(px, py, "OVERDRIVE", "#ff4fd8");
         break;
       case "shield":
         this.player.applyShield();
@@ -428,6 +450,41 @@ export class GameScene extends Phaser.Scene {
   private addScore(amount: number): void {
     this.score += amount;
     if (this.score > this.highScore) this.highScore = this.score;
+    this.checkWeaponUpgrade();
+  }
+
+  private checkWeaponUpgrade(): void {
+    const upgraded = this.player.upgradeWeaponForScore(this.score);
+    if (!upgraded) return;
+    const tier = WEAPONS[this.player.weaponLevel];
+    audio.play("item");
+    this.effects.scorePopup(this.player.x, this.player.y - 40, `▲ ${upgraded}`, tier.color);
+    this.effects.weaponUpgradeBurst(this.player.x, this.player.y, Phaser.Display.Color.HexStringToColor(tier.color).color);
+  }
+
+  /** Weapon HUD fields derived from the player's current tier and score. */
+  private weaponHud(): {
+    name: string;
+    level: number;
+    max: number;
+    progress: number;
+    color: string;
+  } {
+    const idx = this.player.weaponLevel;
+    const tier = WEAPONS[idx];
+    const next = WEAPONS[idx + 1];
+    let progress = 1;
+    if (next) {
+      const span = next.threshold - tier.threshold;
+      progress = span > 0 ? Phaser.Math.Clamp((this.score - tier.threshold) / span, 0, 1) : 1;
+    }
+    return {
+      name: tier.name,
+      level: idx + 1,
+      max: WEAPONS.length,
+      progress,
+      color: tier.color,
+    };
   }
 
   // ------------------------------------------------------------ lifecycle ---
@@ -464,6 +521,7 @@ export class GameScene extends Phaser.Scene {
     if (!force && now - this.lastHudPush < HUD_THROTTLE_MS) return;
     this.lastHudPush = now;
 
+    const weapon = this.weaponHud();
     const snapshot: HudSnapshot = {
       score: this.score,
       highScore: this.highScore,
@@ -475,6 +533,11 @@ export class GameScene extends Phaser.Scene {
       bossHpRatio: this.boss && this.boss.active ? this.boss.hpRatio : null,
       difficulty: this.difficulty,
       wave: this.difficultySys.currentLevel + 1,
+      weaponName: weapon.name,
+      weaponLevel: weapon.level,
+      weaponMax: weapon.max,
+      weaponProgress: weapon.progress,
+      weaponColor: weapon.color,
     };
     bus.emit(EVENTS.HUD_UPDATE, snapshot);
   }
