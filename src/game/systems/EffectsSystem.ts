@@ -23,12 +23,15 @@ export class EffectsSystem {
 
   private initEmitter(): void {
     // One reusable emitter; bursts are produced via emitParticleAt().
+    // maxParticles is a hard ceiling so dense combat can never let live
+    // particles accumulate without bound and collapse the frame rate.
     this.burst = this.scene.add.particles(0, 0, "particle", {
       speed: { min: 60, max: 240 },
       angle: { min: 0, max: 360 },
       scale: { start: 0.9, end: 0 },
       lifespan: { min: 250, max: 560 },
       blendMode: "ADD",
+      maxParticles: 600,
       emitting: false,
     });
     this.burst.setDepth(DEPTH.EFFECTS);
