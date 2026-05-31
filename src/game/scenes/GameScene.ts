@@ -221,13 +221,23 @@ export class GameScene extends Phaser.Scene {
 
   // -------------------------------------------------------------- spawning ---
 
+  /** Hard ceiling on simultaneously-pooled bullets in one group. */
+  private static readonly MAX_BULLETS_PER_GROUP = 220;
+
   private acquireBullet(
     group: Phaser.Physics.Arcade.Group,
     texture: string,
     depth: number,
-  ): Bullet {
+  ): Bullet | null {
     const existing = group.getFirstDead(false) as Bullet | null;
-    const bullet = existing ?? this.createPooledBullet(group, texture, depth);
+    if (existing) {
+      existing.setTexture(texture);
+      return existing;
+    }
+    // Safety valve: never let the pool grow without bound (prevents runaway
+    // allocation / render stalls if firing ever outpaces recycling).
+    if (group.getLength() >= GameScene.MAX_BULLETS_PER_GROUP) return null;
+    const bullet = this.createPooledBullet(group, texture, depth);
     bullet.setTexture(texture);
     return bullet;
   }
@@ -246,12 +256,14 @@ export class GameScene extends Phaser.Scene {
 
   private firePlayerBullet = (shot: PlayerShot) => {
     const bullet = this.acquireBullet(this.playerBullets, shot.texture, DEPTH.PLAYER_BULLETS);
+    if (!bullet) return;
     bullet.fire(shot.x, shot.y, shot.vx, shot.vy, shot.damage, shot.angle, shot.pierce);
     this.effects.muzzleFlash(shot.x, shot.y);
   };
 
   private fireEnemyBullet(x: number, y: number, vx: number, vy: number): void {
     const bullet = this.acquireBullet(this.enemyBullets, "bulletEnemy", DEPTH.ENEMY_BULLETS);
+    if (!bullet) return;
     bullet.fire(x, y, vx, vy, 1);
   }
 
