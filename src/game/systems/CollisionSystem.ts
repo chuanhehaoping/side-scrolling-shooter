@@ -6,9 +6,8 @@ import { Bullet } from "../entities/Bullet";
 import type { Item } from "../entities/Item";
 
 type Group = Phaser.Physics.Arcade.Group;
-type OverlapObj =
-  | Phaser.Types.Physics.Arcade.GameObjectWithBody
-  | Phaser.Tilemaps.Tile;
+/** The concrete object type Arcade hands to an overlap callback. */
+type OverlapObj = Phaser.GameObjects.GameObject;
 
 interface CollisionHandlers {
   onBulletHitEnemy: (bullet: Bullet, enemy: Enemy) => void;
@@ -40,7 +39,7 @@ export class CollisionSystem {
   }
 
   /** Returns the Bullet from an overlapping pair, regardless of arg order. */
-  private static bulletOf(a: OverlapObj, b: OverlapObj): Bullet | null {
+  private static bulletOf(a: unknown, b: unknown): Bullet | null {
     if (a instanceof Bullet) return a;
     if (b instanceof Bullet) return b;
     return null;
@@ -68,12 +67,14 @@ export class CollisionSystem {
     });
 
     physics.add.overlap(enemies, player, (a, b) => {
-      const enemy = (a === player ? b : a) as unknown as Enemy;
+      const playerGo = player as unknown as OverlapObj;
+      const enemy = (a === playerGo ? b : a) as unknown as Enemy;
       this.handlers.onPlayerHitByEnemy(enemy);
     });
 
     physics.add.overlap(items, player, (a, b) => {
-      const item = (a === player ? b : a) as unknown as Item;
+      const playerGo = player as unknown as OverlapObj;
+      const item = (a === playerGo ? b : a) as unknown as Item;
       this.handlers.onItemCollected(item);
     });
   }
