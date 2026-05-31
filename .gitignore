@@ -37,3 +37,7 @@ _final.log
 
 # claude local
 .claude/
+
+# scratch logs
+_*.log
+_*.txt
